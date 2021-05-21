@@ -50,7 +50,7 @@ def extract_data(data, dbms=None, database=None, table=None, column=None, order=
 		while True:
 			current = minimum + ((maximum - minimum) // 2)
 			payload = skeleton.format(query, current_char, current)
-			if inject(payload):
+			if inject(payload) and chr(current) != "'":
 				maximum = current
 				if maximum == minimum:
 					if maximum < 32 or minimum > 127:
