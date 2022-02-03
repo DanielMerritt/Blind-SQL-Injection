@@ -49,14 +49,6 @@ def extract_data(data, dbms=None, database=None, table=None, column=None, order=
         minimum = 32
         while True:
             current = minimum + ((maximum - minimum) // 2)
-            if chr(current) == "'":
-                if current != maximum:
-                    current += 1
-                elif current != minimum:
-                    current -= 1
-                else:
-                    done = True
-                    break
             payload = skeleton.format(query, current_char, current)
             if inject(payload):
                 maximum = current
