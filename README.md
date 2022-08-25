@@ -11,3 +11,5 @@ blindmysql.py &lt;dbms&gt; &lt;database&gt; (to get tables for a given database)
 blindmysql.py &lt;dbms&gt; &lt;database&gt; &lt;table&gt; (to get columns for a given table)
 
 blindmysql.py &lt;dbms&gt; &lt;database&gt; &lt;table&gt; &lt;comma separated columns&gt; (to dump the data in the given columns within the given table)
+
+blindmysql.py --interactive (Execute custom queries against the database)
