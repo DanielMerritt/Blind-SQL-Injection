@@ -199,9 +199,11 @@ def main():
             print(
                 "Usage python3 blindmysql.py <dbms> <database> <table> <comma separated columns> (Use fewer arguments to extract metadata)"
             )
+            return
+
         elif sys.argv[1] == "-i" or sys.argv[1] == "--interactive":
             interactive()
-        return
+            return
 
     process_input()
 
